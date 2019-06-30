@@ -6,7 +6,23 @@ import torch
 from collections import Counter
 from tqdm import tqdm
 
-def evaluation(step, args, model, test_loader):
+
+def to_diffTask(pred_events, real_events, n, type = 0):
+    pes = []
+    res = []
+    for i in range(len(pred_events)):
+        if type == 0:
+            pes.append(1 if(pred_events[i]==6) else 0)
+            res.append(1 if(real_events[i]==6) else 0)
+        else:
+            if real_events[i] != 6:
+                pes.append(pred_events[i])
+                res.append(real_events[i])
+
+    return np.array(pes), np.array(res)
+
+
+def evaluation(step, args, model, test_loader, result):
     model.eval()
     pred_times, pred_events = [], []
     real_times, real_events = [], []
@@ -16,14 +32,38 @@ def evaluation(step, args, model, test_loader):
         pred_time, pred_event = model.predict(batch)
         pred_times.append(pred_time)
         pred_events.append(pred_event)
+
     pred_times = np.concatenate(pred_times).reshape(-1)
     real_times = np.concatenate(real_times).reshape(-1)
     pred_events = np.concatenate(pred_events).reshape(-1)
     real_events = np.concatenate(real_events).reshape(-1)
-    time_error = abs_error(pred_times, real_times)
-    acc, recall, f1 = clf_metric(pred_events, real_events, n_class=args.num_class)
+
+
+    time_error = np.mean(np.abs(pred_times - real_times))
+
+    acc, recall, f1 = [], [], []
+    eErr = [acc, recall, f1]
+
+    # error and ticket
+    pes, res = to_diffTask(pred_events, real_events, args.num_class, 0)
+    tmp = eva_metric(pes, res, 2)
+    for i in range(3):
+        eErr[i].append(tmp[i])
+
+    # for all error
+    pes, res = to_diffTask(pred_events, real_events, args.num_class, 1)
+    tmp = eva_metric(pes, res, args.num_class-1)
+    for i in range(3):
+        eErr[i].append(tmp[i])
+
+
     print("epoch: ", step)
-    print("time_error: {}, Presicion: {}, Recall: {}, macro-F1: {}".format(time_error, acc, recall, f1))
+    print("MAE: {}, Presicion: {}, Recall: {}, macro-F1: {}".format(time_error, acc, recall, f1))
+
+    result['MAE'].append(time_error)
+    result['presicion'].append(acc)
+    result['recall'].append(recall)
+    result['f1'].append(f1)
 
 
 class MyDataset:
@@ -78,7 +118,7 @@ class MyDataset:
         for thr in [0.001, 0.01, 0.1, 1, 10, 100]:
             print(f"<{thr} = {np.mean(intervals < thr)}")
 
-    def importance_weight(self):
+    def init_weight(self):
         count = Counter(self.event)
         percentage = [count[k] / len(self.event) for k in sorted(count.keys())]
         for i, p in enumerate(percentage):
@@ -87,52 +127,19 @@ class MyDataset:
         return weight
 
 
-def sigmoid(x):
-    return 1 / (1 + math.exp(-x))
-
-
-def softmax(x):
-    x = np.exp(x)
-    return x / x.sum()
-
-
-def abs_error(pred, real): return np.mean(np.abs(pred - real))
-
-def clf_metric(pred, real, n_class):
-    gold_count = Counter(real)
-    pred_count = Counter(pred)
-    prec = recall = 0
-    pcnt = rcnt = 0
-    for i in range(n_class):
-        match_count = np.logical_and(pred == real, pred == i).sum()
-        if gold_count[i] != 0:
-            prec += match_count / gold_count[i]
-            pcnt += 1
-        if pred_count[i] != 0:
-            recall += match_count / pred_count[i]
-            rcnt += 1
-    prec /= pcnt
-    recall /= rcnt
-    print(f"pcnt={pcnt}, rcnt={rcnt}")
-    f1 = 2 * prec * recall / (prec + recall)
-    return prec, recall, f1
-
 def eva_metric(pred, real, n_class):
     # Use confusion matrix
     real_count = Counter(real)
     pred_count = Counter(pred)
     prec, recall = [], []
-    pNum = rNum = 0
     pp = rr = 0
-    ppNum = rrNum = 0
     macroF1 = []
     for i in range(n_class):
         # TP
         TP = np.logical_and(pred == real, real == i).sum()
         # real_count[i] = TP + FN
         # pred_count[i] = TP + FP
-        FN = real_count[i] - TP
-        FP = pred_count[i] - TP
+        rr = pp = None
         if pred_count[i] != 0:
             pp = TP / pred_count[i]
             prec.append(pp)
@@ -141,11 +148,10 @@ def eva_metric(pred, real, n_class):
             rr = TP / real_count[i]
             recall.append(rr)
 
-        # if rr is not None
-        macroF1.append(2 * pp * rr / (pp + rr))
+        if TP != 0:
+            macroF1.append(2 * pp * rr / (pp + rr))
 
-    prec /= pNum
-    recall /= rNum
-    print(f"pNum={pNum}, rNum={rNum}")
+    prec = np.mean(prec)
+    recall = np.mean(recall)
     macroF1 = np.mean(macroF1)
     return prec, recall, macroF1

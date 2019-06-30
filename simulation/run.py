@@ -12,6 +12,7 @@ def main():
     parser = argparse.ArgumentParser("PP simulator")
     parser.add_argument('--param-file', type=str, default='parameters', help="")
     parser.add_argument('--result', type=str, default='result', help="")
+    parser.add_argument("--fit_epochs", type=int, default=20)
     args = parser.parse_args()
 
     # Load params

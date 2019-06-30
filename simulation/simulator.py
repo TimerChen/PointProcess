@@ -122,7 +122,7 @@ def get_bigLambda(params, tau):
             dura = (tau[m][i] - tau[m][i-1])
             # First term
             tmp = miu[m] * dura
-            
+
             # Second term (No j)
             for n in range(M):
                 tmp += (alpha[m][n] / beta) * (1 - math.exp(-beta * dura)) * A[m][n][i-1]
@@ -147,12 +147,14 @@ def draw_result(params, tau, dirname):
 def run_simu(args, params, runTimes = 1):
     miu, alpha, beta, T = params['miu'], params['alpha'], params['beta'], params['T']
 
+    # tau = simulation(miu, alpha, beta, T)
     tau = simulate(miu, alpha, beta, T)
 
     # deal with the first result
     draw_result(params, tau, args.result)
 
     # simulate for step2
+    # tauList = [simulation(miu, alpha, beta, T) for i in range(runTimes)]
     tauList = [simulate(miu, alpha, beta, T) for i in range(runTimes)]
 
     # dump the first result

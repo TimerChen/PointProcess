@@ -90,96 +90,23 @@ def fit_one_step(tau, T, beta=None, eval=None, max_step=50, eps=1e-4):
             beta = up / down
 
         err = evaluation(eval, params)
-        print(params, eval)
+        # print(params, eval)
         print("err: {}".format(err))
 
+    params['beta'] = beta
     return params, eval_history
-
-def fit_single(seqs, T, w=None, max_step=30, eps=1e-5, realParams=None):
-    """
-    inference the multi-hawkes point process parameters
-    :param seqs: the list of event sequences, M = len(seqs) is the dimension of the process
-    :param T: the data was sampled from time interval [0, T]
-    :param w: when w is None, we inference w, otherwise we regard w is known
-    :param max_step: the maximum number of steps
-    :param eps: the epsilon, when the 2-norm of change is less or equal to epsilon, stop iteration
-    :return: parameters, {'U': U, 'A', A, 'w': w}, where U is the background intensity
-        and A is the infectivity matrix. A[n][m] is the infectivity of n to m
-    """
-    T = max([max(seq) for seq in seqs])
-    print(T)
-    M = len(seqs)
-    w_known = w is not None
-    U = np.random.uniform(0, 0.1, size=M)
-    A = np.random.uniform(0, 0.1, size=(M, M))
-    if not w_known:
-        w = np.random.uniform(0, 1, size=1)
-
-    e = []
-    for index, seq in enumerate(seqs):
-        e.extend(zip(seq, itertools.repeat(index)))
-    e = sorted(e, key=lambda event: event[0])
-    N = len(e)
-    p = np.zeros((N, N))
-
-    for step in range(max_step):
-        old_U = np.copy(U)
-        old_A = np.copy(A)
-        old_w = np.copy(w)
-
-        # update p
-        for i in range(N):
-            for j in range(i):
-                p[i, j] = old_A[e[i][1], e[j][1]] * np.exp(-w * (e[i][0] - e[j][0]))
-            p[i, i] = old_U[e[i][1]]
-            p[i] = p[i] / np.sum(p[i])
-
-        # update U
-        for d in range(M):
-            U[d] = sum([p[i, i] for i in range(N) if e[i][1] == d]) / T
-
-        # update A
-        for du in range(M):
-            for dv in range(M):
-                up, down = 0.0, 0.0
-                for i in range(N):
-                    if e[i][1] != du: continue
-                    for j in range(i):
-                        if e[j][1] != dv: continue
-                        up += p[i, j]
-                for j in range(N):
-                    if e[j][1] != dv: continue
-                    down += (1.0 - np.exp(-old_w * (T - e[j][0]))) / old_w
-                A[du, dv] = up / down
-
-        # update w
-        if not w_known:
-            up, down = 0.0, 0.0
-            for i in range(N):
-                for j in range(i):
-                    pij = p[i, j]
-                    up += pij
-                    down += (e[i][0] - e[j][0]) * pij
-            w = up / down
-        else:
-            w = old_w
-
-        eva = evaluation(realParams, {'miu': U, 'alpha': A, 'beta': w})
-        print("\nStep  {} EVA {}".format(step, eva), end="")
-    print()
-    return {'miu': U, 'alpha': A, 'beta': w}
 
 def fit(tauList, T, beta=None, eval=None, max_step=20, eps=1e-4):
     miuList = []
     alphaList = []
     betaList = []
     for i, tau in enumerate(tauList):
-        #params, _ = fit_one_step(tau, T, beta, eval, max_step, eps)
-        params = fit_single(tau, T, beta, max_step, eps, eval)
+        params, _ = fit_one_step(tau, T, beta, eval, max_step, eps)
+        # params = fit_single(tau, T, beta, max_step, eps, eval)
         miuList.append(params['miu'])
         alphaList.append(params['alpha'])
         betaList.append(params['beta'])
-    miu = np.mean(betaList, axis=0)
+    miu = np.mean(miuList, axis=0)
     alpha = np.mean(alphaList, axis=0)
     beta = np.mean(betaList, axis=0)
     return {'miu': miu.tolist(), 'alpha': alpha.tolist(), 'beta': beta.tolist()}
@@ -187,7 +114,7 @@ def fit(tauList, T, beta=None, eval=None, max_step=20, eps=1e-4):
 def run_fitting(args, params, tauList):
     miu, alpha, beta, T = params['miu'], params['alpha'], params['beta'], params['T']
 
-    fitting_result = fit(tauList, T, beta=None, eval=params)
+    fitting_result = fit(tauList, T, beta=None, eval=params, max_step=args.fit_epochs)
     print(fitting_result)
     fitting_result['mean_relative_error'] = evaluation(params, fitting_result)
     utils.dump_all([fitting_result], ["fitting_result"])

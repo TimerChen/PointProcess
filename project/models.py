@@ -2,7 +2,6 @@ import torch
 from torch import nn
 from torch.optim import Adam
 import numpy as np
-from optimization import BertAdam
 
 
 class Net(nn.Module):
@@ -11,6 +10,7 @@ class Net(nn.Module):
         self.lr = args.lr
         self.model = args.model
         self.alpha = args.alpha
+        self.use_cpu = args.cpu
 
         self.n_class = args.num_class
         self.embedding = nn.Embedding(num_embeddings=args.num_class, embedding_dim=args.emb_dim)
@@ -21,24 +21,22 @@ class Net(nn.Module):
                             bidirectional=False)
         self.mlp = nn.Linear(in_features=args.hid_dim, out_features=args.mlp_dim)
         self.mlp_drop = nn.Dropout(p=args.dropout)
-        self.event_linear = nn.Linear(in_features=args.mlp_dim, out_features=args.num_class)
-        self.time_linear = nn.Linear(in_features=args.mlp_dim, out_features=1)
+        self.event_output = nn.Linear(in_features=args.mlp_dim, out_features=args.num_class)
+        self.time_output = nn.Linear(in_features=args.mlp_dim, out_features=1)
         self.set_criterion(lossweight)
 
-    def set_optimizer(self, total_step, use_bert=True):
-        if use_bert:
-            self.optimizer = BertAdam(params=self.parameters(),
-                                      lr=self.lr,
-                                      warmup=0.1,
-                                      t_total=total_step)
-        else:
-            self.optimizer = Adam(self.parameters(), lr=self.lr)
+    def set_optimizer(self, total_step):
+        self.optimizer = Adam(self.parameters(), lr=self.lr)
 
     def set_criterion(self, weight):
         self.event_criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(weight))
         if self.model == 'rmtpp':
-            self.intensity_w = nn.Parameter(torch.tensor(0.1, dtype=torch.float, device='cuda'))
-            self.intensity_b = nn.Parameter(torch.tensor(0.1, dtype=torch.float, device='cuda'))
+            if not self.use_cpu:
+                self.intensity_w = nn.Parameter(torch.tensor(0.1, dtype=torch.float, device='cuda'))
+                self.intensity_b = nn.Parameter(torch.tensor(0.1, dtype=torch.float, device='cuda'))
+            else:
+                self.intensity_w = nn.Parameter(torch.tensor(0.1, dtype=torch.float))
+                self.intensity_b = nn.Parameter(torch.tensor(0.1, dtype=torch.float))
             self.time_criterion = self.RMTPPLoss
         else:
             self.time_criterion = nn.MSELoss()
@@ -58,13 +56,16 @@ class Net(nn.Module):
         # hidden_state = torch.cat((hidden_state, input_time.unsqueeze(-1)), dim=-1)
         mlp_output = torch.tanh(self.mlp(hidden_state[:, -1, :]))
         mlp_output = self.mlp_drop(mlp_output)
-        event_logits = self.event_linear(mlp_output)
-        time_logits = self.time_linear(mlp_output)
+        event_logits = self.event_output(mlp_output)
+        time_logits = self.time_output(mlp_output)
         return time_logits, event_logits
 
     def dispatch(self, tensors):
         for i in range(len(tensors)):
-            tensors[i] = tensors[i].cuda().contiguous()
+            if self.use_cpu:
+                tensors[i] = tensors[i].contiguous()
+            else:
+                tensors[i] = tensors[i].cuda().contiguous()
         return tensors
 
     def train_batch(self, batch):
