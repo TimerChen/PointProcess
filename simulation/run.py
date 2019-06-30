@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--param-file', type=str, default='parameters', help="")
     parser.add_argument('--result', type=str, default='result', help="")
     parser.add_argument("--fit_epochs", type=int, default=20)
+    parser.add_argument("--only_simu", action='store_true')
     args = parser.parse_args()
 
     # Load params
@@ -23,6 +24,9 @@ def main():
 
     # Step 1 : simulation
     tauList = run_simu(args, params, 2)
+
+    if args.only_simu:
+        return
 
     # Step 2 : fitting
     run_fitting(args, params, tauList)

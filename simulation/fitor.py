@@ -24,16 +24,15 @@ def evaluation(real_parameters, fitted_parameters):
     down[np.where(down == 0)] = 1.0
     return np.mean(np.abs(X1-X2) / down)
 
-def fit_one_step(tau, T, beta=None, eval=None, max_step=50, eps=1e-4):
+def fit_one_step(tau, T, eval=None, max_step=50, eps=1e-4):
     T = max([max(t) for t in tau])
 
     M = len(tau)
-    needEstimateBeta = beta is None
+    needEstimateBeta = True
 
     miu = np.random.uniform(0, 0.1, size=M)
     alpha = np.random.uniform(0, 0.1, size=(M, M))
-    if beta is None:
-        beta = np.random.uniform(0, 1, size=1)
+    beta = np.random.uniform(0, 1, size=1)
     params = {'miu':miu, 'alpha':alpha, 'beta':beta}
 
     e = []
@@ -96,12 +95,12 @@ def fit_one_step(tau, T, beta=None, eval=None, max_step=50, eps=1e-4):
     params['beta'] = beta
     return params, eval_history
 
-def fit(tauList, T, beta=None, eval=None, max_step=20, eps=1e-4):
+def fit(tauList, T, eval=None, max_step=20, eps=1e-4):
     miuList = []
     alphaList = []
     betaList = []
     for i, tau in enumerate(tauList):
-        params, _ = fit_one_step(tau, T, beta, eval, max_step, eps)
+        params, _ = fit_one_step(tau, T, eval, max_step, eps)
         # params = fit_single(tau, T, beta, max_step, eps, eval)
         miuList.append(params['miu'])
         alphaList.append(params['alpha'])
@@ -114,7 +113,7 @@ def fit(tauList, T, beta=None, eval=None, max_step=20, eps=1e-4):
 def run_fitting(args, params, tauList):
     miu, alpha, beta, T = params['miu'], params['alpha'], params['beta'], params['T']
 
-    fitting_result = fit(tauList, T, beta=None, eval=params, max_step=args.fit_epochs)
+    fitting_result = fit(tauList, T, eval=params, max_step=args.fit_epochs)
     print(fitting_result)
     fitting_result['mean_relative_error'] = evaluation(params, fitting_result)
     utils.dump_all([fitting_result], ["fitting_result"])
